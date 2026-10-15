@@ -9,17 +9,22 @@ Aplikasi persediaan untuk satu kedai: hitung fisik, penyesuaian manual, riwayat 
 - Supabase PostgreSQL dan Supabase Auth
 - Vitest, PostgreSQL/PGlite untuk integrasi transaksi, Playwright untuk alur browser
 
-Repositori awal kosong. Aplikasi mengikuti `docs/AMBO_COFFEE_WEB_SYSTEM_SPEC_FOR_CODEX.md`.
+Repositori tujuan: `ShaldyStartup/ambokopistocksystem`. Aplikasi mengikuti `AMBO_COFFEE_WEB_SYSTEM_SPEC_FOR_CODEX.md`.
 
 ## Menjalankan secara lokal
 
 ```powershell
 npm ci
-Copy-Item .env.example .env.local
 ```
 
-1. Buat proyek Supabase, atau gunakan instance Supabase lokal. Di SQL Editor, jalankan seluruh isi `supabase/migrations/202610150001_inventory.sql` satu kali pada database baru. Jika memakai Supabase CLI, gunakan `supabase db push` sesuai proyek yang ditautkan.
-2. Isi `NEXT_PUBLIC_SUPABASE_URL` dan `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` dari proyek Supabase di `.env.local`. Kunci anon legacy juga dapat digunakan sebagai publishable key. Jangan gunakan service-role key untuk variabel publik.
+1. Gunakan proyek Supabase **AmboKopi** yang sudah terhubung (project ref: `fljtmusdvaykxxnqgiiv`). Jangan buat proyek kedua. Kedua migrasi dalam `supabase/migrations/` sudah diterapkan ke proyek ini. Untuk database pengujian baru, jalankan semua file SQL menurut urutan nama, atau gunakan Supabase CLI dengan proyek yang ditautkan.
+2. Siapkan `NEXT_PUBLIC_SUPABASE_URL` dan `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` sebagai environment variables. Dapatkan nilainya dari Connect / Settings → API Keys di Supabase. Gunakan publishable key `sb_publishable_...`; jangan gunakan secret key untuk variabel publik. `.env.example` hanya berisi nama variabel kosong. Tidak ada `.env.local` atau credential yang dibuat/di-commit oleh implementasi ini.
+
+```powershell
+$env:NEXT_PUBLIC_SUPABASE_URL="<URL proyek dari Supabase>"
+$env:NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="<publishable key dari Supabase>"
+```
+
 3. Di Authentication → Providers, aktifkan email/password dan matikan pendaftaran publik karena akun disiapkan oleh administrator. Terapkan kebijakan kata sandi dan pembatasan login Supabase sesuai operasional.
 4. Buat pengguna di Authentication → Users. Setelah itu buat profil menggunakan UUID pengguna:
 
@@ -43,18 +48,18 @@ Setelah login sebagai pemilik: buka **Kategori**, tambah kategori; buka **Persed
 
 **Hanya gunakan proyek development kosong.** Nama akun/item/kategori berawalan DEMO; kuantitas dan batas minimum sepenuhnya fiktif. Migrasi produksi tidak memasukkan seed.
 
-Isi variabel berikut di `.env.local`: `SUPABASE_SERVICE_ROLE_KEY`, `DEMO_SEED_CONFIRM=DEVELOPMENT_ONLY`, `DEMO_OWNER_PASSWORD`, `DEMO_STAFF_PASSWORD` (minimal 12 karakter). Jalankan:
+Siapkan environment development: `SUPABASE_SECRET_KEY` (server-only; legacy `SUPABASE_SERVICE_ROLE_KEY` juga didukung), `DEMO_SEED_CONFIRM=DEVELOPMENT_ONLY`, `DEMO_OWNER_PASSWORD`, `DEMO_STAFF_PASSWORD` (minimal 12 karakter). Jalankan:
 
 ```powershell
-node --env-file=.env.local scripts/seed-demo.mjs
+npm run seed:demo
 ```
 
-Akun: `owner@example.com` dan `staff@example.com`, menggunakan kata sandi yang Anda isi. Skrip menolak menimpa akun yang sudah ada dan berhenti jika pembuatan gagal. Jika terjadi kegagalan parsial, gunakan proyek development baru atau bersihkan data uji secara administratif sebelum mengulang. Service-role hanya dipakai skrip seed untuk provisioning akun/profil, tidak dipakai aplikasi web. Hapus kunci ini dari lingkungan deployment aplikasi.
+Akun: `owner@example.com` dan `staff@example.com`, menggunakan kata sandi yang Anda isi. Skrip menolak menimpa akun yang sudah ada dan berhenti jika pembuatan gagal. Jika terjadi kegagalan parsial, gunakan proyek development baru atau bersihkan data uji secara administratif sebelum mengulang. Secret key hanya dipakai skrip seed untuk provisioning akun/profil, tidak dipakai aplikasi web. Hapus kunci ini dari lingkungan deployment aplikasi.
 
 ## Integritas dan keamanan
 
 - Semua halaman operasional memeriksa sesi Supabase di server; semua server action memeriksa profil aktif/peran.
-- RLS membatasi pembacaan dan tidak mengizinkan mutasi tabel langsung oleh anon/staf/pengelola. Mutasi berjalan melalui RPC dengan `SECURITY DEFINER`, `search_path` kosong, dan pemeriksaan peran database.
+- RLS membatasi pembacaan dan tidak mengizinkan mutasi tabel langsung oleh anon/staf/pengelola. Entrypoint RPC publik memakai `SECURITY INVOKER`; implementasi transaksi dengan `SECURITY DEFINER` berada dalam schema privat `inventory_private`, memakai `search_path` kosong dan pemeriksaan peran database.
 - `record_stock` mengunci item dengan urutan UUID konsisten dan membandingkan stok awal yang dilihat pengguna. Jika stok berubah, simpan ditolak; muat ulang dan periksa angka terbaru.
 - Satu kiriman hitung fisik bersifat atomik untuk seluruh item. Penyesuaian dan stok awal juga menulis stok serta riwayat dalam transaksi yang sama. Kegagalan insert riwayat membatalkan perubahan.
 - Riwayat append-only, tidak ada tombol/API hapus. Trigger menolak UPDATE/DELETE bahkan melalui koneksi administratif biasa. Administrator database tetap merupakan pihak tepercaya yang dapat mengubah skema.
@@ -102,20 +107,19 @@ Unit test mencakup hitung fisik, penambahan, pengurangan, koreksi, angka negatif
 Untuk mengulang tes database pada PostgreSQL/Supabase lokal disposable, isi `TEST_DATABASE_URL`, lalu jalankan:
 
 ```powershell
-node --env-file=.env.local scripts/test-db.mjs
+npm run test:db
 ```
 
 Runner menggunakan transaksi yang di-rollback dan menolak database yang sudah mempunyai tabel aplikasi. Jangan arahkan ke produksi.
 
-Browser test dasar:
+Browser test dasar (server lokal dijalankan otomatis jika belum ada):
 
 ```powershell
 npx playwright install chromium
-npm run dev
 npm run test:e2e
 ```
 
-Untuk alur lengkap, seed proyek development, isi `E2E_STAFF_PASSWORD`/`E2E_STAFF_EMAIL` di environment, dan jalankan `node --env-file=.env.local node_modules/@playwright/test/cli.js test`. Alur ini **mengubah item DEMO Susu menjadi 1 liter**. Tanpa akun, alur autentikasi penuh ditandai skip. Browser perlu tersedia; test tidak memakai bypass autentikasi. Alternatif pada Windows yang sudah mempunyai Edge: set `$env:E2E_BROWSER_CHANNEL="msedge"` sebelum menjalankan test agar tidak perlu mengunduh Chromium.
+Untuk alur lengkap, seed proyek development, isi `E2E_STAFF_PASSWORD`/`E2E_STAFF_EMAIL` di environment, dan jalankan `npm run test:e2e`. Alur ini **mengubah item DEMO Susu menjadi 1 liter**, menyesuaikan DEMO Biji kopi, dan membuat/menonaktifkan item uji owner. Tanpa akun, alur autentikasi penuh ditandai skip. Alur owner juga memerlukan `E2E_OWNER_EMAIL` dan `E2E_OWNER_PASSWORD`, serta kategori aktif `DEMO E2E Pengujian`. Kedua akun harus memakai proyek development. Browser perlu tersedia; test tidak memakai bypass autentikasi. Alternatif pada Windows yang sudah mempunyai Edge: set `$env:E2E_BROWSER_CHANNEL="msedge"` sebelum menjalankan test agar tidak perlu mengunduh Chromium.
 
 ## Struktur penting
 
@@ -137,4 +141,6 @@ npm run build
 npm start
 ```
 
-Gunakan hosting Node.js yang mendukung Next.js 16; konfigurasikan dua variabel publik Supabase saat build/runtime. Migrasi dan provisioning akun harus dilakukan pada proyek tujuan sebelum digunakan. Belum ada deployment/akun/credential produksi yang dibuat oleh implementasi ini.
+Gunakan hosting Node.js yang mendukung Next.js 16; konfigurasikan dua variabel publik Supabase saat build/runtime. Migrasi dan provisioning akun harus dilakukan pada proyek tujuan sebelum digunakan. Belum ada deployment atau akun operasional produksi yang dibuat. Pengujian cloud memakai akun/item berlabel DEMO dengan kata sandi acak sementara. Akun dan item uji dinonaktifkan sesudah pengujian; riwayatnya tetap tersimpan. Buat akun operasional dan profilnya melalui Supabase sebelum penggunaan harian.
+
+Hasil verifikasi cloud dan batasan pengujian tersedia di [docs/VERIFICATION.md](docs/VERIFICATION.md).
