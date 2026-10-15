@@ -7,3 +7,4 @@ test-results/
 coverage/
 *.tsbuildinfo
 .npm-cache/
+supabase/.temp/
